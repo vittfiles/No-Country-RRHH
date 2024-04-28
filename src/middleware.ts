@@ -20,7 +20,7 @@ export async function middleware(request: NextRequest) {
 
 				return NextResponse.redirect(new URL(APPROUTES.DASHBOARD, request.url))
 			}
-			const { value: token } = session
+			/* const { value: token } = session
 
 			await fetch(APIROUTES?.SESSION?.VALIDATE, {
 				method: 'POST',
@@ -30,7 +30,7 @@ export async function middleware(request: NextRequest) {
 				body: JSON.stringify({ session: token })
 			}).then(({ status }) => {
 				if (status !== 200) throw new Error('Sesion no encontrada en la DB')
-			})
+			}) */
 
 			return NextResponse.next()
 		}
