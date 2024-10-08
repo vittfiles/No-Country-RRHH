@@ -5,22 +5,20 @@ namespace Tests\Unit;
 use App\Models\Company;
 use App\Models\NonWorkingDays;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
-use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class NonWorkingDaysModelTest extends TestCase
 {
-    /**
-     * A basic unit test example.
-     */
+    use RefreshDatabase;
+
     public function test_create_non_working_day(): void
     {
         $user = new User();
         $user->id = Str::uuid(36);
-        $user->email = Crypt::encryptString('hola@mail.com');
+        $user->email = 'nonworkingdays-company@mail.com';
         $user->email_verified_at = now();
         $user->password = Hash::make('password');
         $user->remember_token = Str::random(10);

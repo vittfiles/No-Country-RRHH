@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers;
 
-
+use App\Classes\CustomEncrypter;
+use App\Classes\UserCapabilities;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\SessionRequest;
+use App\Models\KeyManager;
 use Carbon\Carbon;
-
+use Illuminate\Support\Facades\Hash;
 
 class SessionController extends Controller
 {
@@ -16,22 +18,64 @@ class SessionController extends Controller
     {
         $request->validated();
 
-        if (Auth::attempt($request->only(['email', 'password']))) {
-            $user = User::find(Auth::user()->id);
+        $user = User::where('email', $request->email)->first();
+
+        if ($user && Hash::check($request->password, $user->password)) {
+            $sharedKey = base64_decode($request->shared_key);
+            KeyManager::find($request->key_id)->delete();
 
             $user->tokens()->delete();
-            $token = $user->createToken('token', ['*'], Carbon::now()->addDays(7));
 
-            return response()->json(
-                [
-                    'session' => $token->plainTextToken,
-                    'user' => $user
-                ],
-                200
-            );
+            if ($company = $user->company()->first()) {
+                $token = $user->createToken('token', UserCapabilities::company(), Carbon::now()->addDays(7));
+
+                return response()->json(
+                    [
+                        'session' => $token->plainTextToken,
+                        'user' => array_merge(
+                            $user->toArray(),
+                            $company->toArray(),
+                            [
+                                'type' => 'company',
+                                'verified' => $company->verified,
+                                'contact' => [
+                                    'email' => CustomEncrypter::encryptOpenSSL(isset($company->contact['email']) ? $company->contact['email'] : '', $sharedKey),
+                                    'phone' => CustomEncrypter::encryptOpenSSL(isset($company->contact['email']) ? $company->contact['phone_number'] : '', $sharedKey),
+                                ]
+                            ]
+                        )
+                    ],
+                    200
+                );
+            } elseif ($employee = $user->employee()->first()) {
+                $token = $user->createToken('token', UserCapabilities::employee(), Carbon::now()->addDays(7));
+
+                $contact = null;
+                if (isset($company->contact)) {
+                    $contact = [
+                        'email' => CustomEncrypter::encryptOpenSSL($company->contact['email'], $sharedKey),
+                        'phone' => CustomEncrypter::encryptOpenSSL($company->contact['phone_number'], $sharedKey),
+                    ];
+                }
+                return response()->json(
+                    [
+                        'session' => $token->plainTextToken,
+                        'user' => array_merge(
+                            $user->toArray(),
+                            $employee->toArray(),
+                            [
+                                'type' => 'employee',
+                                'contact' => $contact
+                            ]
+                        )
+                    ],
+                    200
+                );
+            }
         }
         return response()->json([
-            'error' => 'UNAUTHORIZED'
+            'error' => 'UNAUTHORIZED',
+            'message' => 'el usuario o contraseña no son válidos'
         ], 401);
     }
 
@@ -48,7 +92,8 @@ class SessionController extends Controller
             return response()->json(['success' => true], 200);
         }
         return response()->json([
-            'error' => 'SESSION_NOT_FOUND'
+            'error' => 'SESSION_NOT_FOUND',
+            'message' => 'sesión no encontrada'
         ], 404);
     }
 
@@ -69,7 +114,8 @@ class SessionController extends Controller
             ], 200);
         }
         return response()->json([
-            'error' => 'INVALID_TOKEN'
+            'error' => 'INVALID_TOKEN',
+            'message' => 'sesion invalida'
         ], 404);
     }
 }

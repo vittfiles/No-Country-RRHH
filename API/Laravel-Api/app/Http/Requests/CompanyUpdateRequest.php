@@ -3,35 +3,71 @@
 namespace App\Http\Requests;
 
 use App\Classes\CustomEncrypter;
-use Illuminate\Contracts\Validation\Validator;
-use Illuminate\Foundation\Http\FormRequest;
+use App\Models\KeyManager;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Support\Arr;
-use Illuminate\Validation\ValidationException;
 
-class CompanyUpdateRequest extends FormRequest
+class CompanyUpdateRequest extends CustomFormRequest
 {
     protected function prepareForValidation()
     {
-        $allowed = ['contact'];
+        /* $allowed = ['contact'];
         $dataToDecrypt = array_intersect_key($this->toArray(), array_flip($allowed));
 
-        $dataDecrypted = CustomEncrypter::decrypt($dataToDecrypt);
+        $dataDecrypted = CustomEncrypter::decrypt($dataToDecrypt); */
 
-        $this->merge($dataDecrypted);
+        $keyToDecrypt = [
+            'location' => [
+                'country',
+                'province',
+                'city',
+                'address',
+            ],
+            'contact' => [
+                'email',
+                'phone'
+            ]
+        ];
+
+        $keyManager = KeyManager::find($this->key_id);
+        if ($keyManager) {
+            $sharedKey = $keyManager->key;
+
+            $dataDecrypted = CustomEncrypter::recurseSpecificSchemaOpenSSL(
+                $this->toArray(),
+                $keyToDecrypt,
+                base64_decode($sharedKey)
+            );
+            $dataDecrypted['shared_key'] = $sharedKey;
+            //end new
+            $this->merge($dataDecrypted);
+        } else {
+            throw new HttpResponseException(
+                response()->json([
+                    'error' => 'BAD_REQUEST',
+                    'message' => 'error con la clave de encriptación'
+                ], 400)
+            );
+        }
     }
 
     public function authorize(): bool
     {
-        return true;
+        return $this->user()->tokenCan('update-company');
     }
 
     public function rules(): array
     {
         return [
             'contact.email' => 'required|email',
-            'contact.phone' => 'required',
-            'company_name' => 'required'
+            'contact.phone' => 'required|string',
+
+            'location.country' => 'required|string',
+            'location.province' => 'required|string',
+            'location.city' => 'required|string|',
+            'location.address' => 'required|string',
+            /* 
+            'location.zipcode' => 'required|string', */
+            'sector' => 'required|string',
         ];
     }
 
@@ -40,27 +76,20 @@ class CompanyUpdateRequest extends FormRequest
         return [
             'contact.email.required' => 'El email de contacto es obligatorio',
             'contact.email.email' => 'El email de contacto ingresado no es un email válido',
+            'contact.phone.required' => 'El teléfono del empleado es obligatorio',
+            'contact.phone.string' => 'El teléfono del empleado debe ser texto',
 
-            'contact.phone.required' => 'El número de contacto es obligatorio',
+            'location.country.required' => 'El país del empleado debe ser obligatorio',
+            'location.country.string' => 'El país del empleado debe ser texto',
+            'location.province.required' => 'La provincia es obligatoria',
+            'location.province.string' => 'La provincia del empleado debe ser texto',
+            'location.city.string' => 'La ciudad del empleado debe ser texto',
+            'location.city.required' => 'La ciudad del empleado es obligatoria',
+            'location.address.string' => 'La dirección del empleado debe ser texto',
+            'location.address.required' => 'La dirección del empleado es obligatoria',
 
-            'company_name.required' => 'El nombre de la empresa es obligatorio'
+            'sector.required' => 'El rol del empleado es obligatorio',
+            'sector.string' => 'El rol del empleado debe ser texto',
         ];
-    }
-
-    protected function failedValidation(Validator $validator)
-    {
-        $errors = (new ValidationException($validator))->errors();
-
-        $nested = [];
-        foreach ($errors as $key => $value) {
-            $nested = Arr::undot($errors, $key, $value);
-        }
-
-        throw new HttpResponseException(
-            response()->json([
-                'error' => "BAD_REQUEST",
-                'errors' => $nested
-            ], 400)
-        );
     }
 }

@@ -3,23 +3,57 @@
 namespace App\Http\Requests;
 
 use App\Classes\CustomEncrypter;
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Contracts\Validation\Validator;
+use App\Models\KeyManager;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Support\Arr;
-use Illuminate\Validation\ValidationException;
 
-class CompanyRequest extends FormRequest
+class CompanyRequest extends CustomFormRequest
 {
 
     protected function prepareForValidation()
-    {
+    {/*
         $allowed = ['credentials', 'contact'];
         $dataToDecrypt = array_intersect_key($this->toArray(), array_flip($allowed));
 
-        $dataDecrypted = CustomEncrypter::decrypt($dataToDecrypt);
+        $dataDecrypted = CustomEncrypter::decrypt($dataToDecrypt); */
 
-        $this->merge($dataDecrypted);
+        $keyToDecrypt = [
+            'credentials' => [
+                'email',
+                'password'
+            ],
+            'contact' => [
+                'email',
+                'phone'
+            ]
+        ];
+
+        /* $dataDecrypted = CustomEncrypter::recurseSpecificSchema(
+            array(CustomEncrypter::class, 'decryptString'),
+            $this->toArray(),
+            $keyToDecrypt
+        ); */
+
+        //new
+        $keyManager = KeyManager::find($this->key_id);
+        if ($keyManager) {
+            $sharedKey = $keyManager->key;
+
+            $dataDecrypted = CustomEncrypter::recurseSpecificSchemaOpenSSL(
+                $this->toArray(),
+                $keyToDecrypt,
+                base64_decode($sharedKey)
+            );
+            $dataDecrypted['shared_key'] = $sharedKey;
+            //end new
+            $this->merge($dataDecrypted);
+        } else {
+            throw new HttpResponseException(
+                response()->json([
+                    'error' => 'BAD_REQUEST',
+                    'message' => 'error con la clave de encriptación'
+                ], 400)
+            );
+        }
     }
 
     public function authorize(): bool
@@ -38,8 +72,8 @@ class CompanyRequest extends FormRequest
                 'regex:/^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[#?!@$%^&*-]).{8,}$/'
             ],
             'contact.email' => 'required|email',
-            'contact.phone' => 'required',
-            'company_name' => 'required'
+            'contact.phone' => 'required|string',
+            'company_name' => 'required|string'
         ];
     }
 
@@ -59,25 +93,10 @@ class CompanyRequest extends FormRequest
             'contact.email.email' => 'El email de contacto ingresado no es un email válido',
 
             'contact.phone.required' => 'El número de contacto es obligatorio',
+            'contact.phone.string' => 'El número de contacto debe ser texto',
 
-            'company_name.required' => 'El nombre de la empresa es obligatorio'
+            'company_name.required' => 'El nombre de la empresa es obligatorio',
+            'company_name.string' => 'El nombre de la empresa debe ser texto'
         ];
-    }
-
-    protected function failedValidation(Validator $validator)
-    {
-        $errors = (new ValidationException($validator))->errors();
-
-        $nested = [];
-        foreach ($errors as $key => $value) {
-            $nested = Arr::undot($errors, $key, $value);
-        }
-
-        throw new HttpResponseException(
-            response()->json([
-                'error' => "BAD_REQUEST",
-                'errors' => $nested
-            ], 400)
-        );
     }
 }
